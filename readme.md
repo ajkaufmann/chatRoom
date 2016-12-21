@@ -1,4 +1,6 @@
-# Allen Nikka and Andy Kaufmann's creative portion Module 6
+# A simple chatroom.
+
+## I co-created this chatroom with Allen Nikka
 
 ## Features
 
@@ -8,9 +10,3 @@
   - Announce to other users in the room that the inactive user is inactive and about to me pushed back to the lobby
   - Push the inactive user to the lobby
   - Change the inactive user's status to "away"
-
-```
-Hyperlink to chatroom: http://ec2-54-167-227-152.compute-1.amazonaws.com:3456/~allennikka/
-```
-
-<!-- Add a indent and this will end up as code --> <!-- *This will be Italic* --> <!-- **This will be Bold** -->
