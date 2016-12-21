@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>The Chatroom</title>
+    <!-- <link href="jquery.minipreview.css" rel="stylesheet"></link>
+    <script src="jquery.minipreview.js"></script> -->
+    <!-- minipreview source: https://github.com/lonekorean/mini-preview -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+    <script type="text/javascript">
+        var socket = io.connect();
+
+        function postMessage(chatObject) {
+            document.getElementById("chatlog").appendChild(document.createElement("hr"));
+            document.getElementById("chatlog").appendChild(document.createTextNode(chatObject['username'] + ": "));
+            document.getElementById("chatlog").appendChild(document.createTextNode(chatObject['message']));
+        }
+
+        socket.on("message_to_client", function(data) {
+            postMessage(data);
+        });
+
+        socket.on("update_rooms", function(data) {
+            updateRoomList(data);
+        });
+
+        function addUser() {
+            var username = $("#username").val();
+            var myFile = $("#userPic");
+            var input = myFile[0];
+            var file = input.files[0];
+            $("#setUsernameInput").hide();
+            $("#userPic").hide();
+            $("#messageInput").show();
+            $("#makeRoomInput").show();
+            var status = "available";
+            socket.status = status;
+            socket.username = username;
+            socket.room = 'lobby';
+            socket.emit("new_user", {
+                username: username,
+                file: file,
+                status: status
+            });
+        }
+
+        function makeRoom() {
+            var room = $("#room").val();
+            $("#room").val("");
+            socket.room = room;
+            socket.admin = room;
+            var type_room = $("input[type='radio'][name='pub_private']:checked").val();
+            var password = "";
+            if (type_room == "private") {
+                password = prompt("What is your password?", "New Password");
+            }
+            socket.emit("new_room", {
+                room: room,
+                type: type_room,
+                password: password
+            });
+            $("#makeRoomInput").hide();
+            $("#banUserInput").show();
+            $("#chatlog").empty();
+        }
+
+        function kickoutUser() {
+            alert("Kicking out User");
+            var user_to_kickout = $("#user").val();
+            $("#user").val("");
+            socket.emit("kickout_user", {
+                user_to_kickout: user_to_kickout
+            });
+        }
+
+        function banUser() {
+            alert("Banning user!");
+            var user_to_ban = $("#user").val();
+            $("#user").val("");
+            socket.emit("ban_user", {
+                user_to_ban: user_to_ban,
+                room: socket.room
+            });
+        }
+
+        socket.on("check_if_kickout", function(data) {
+            alert("Checking if kickedout!");
+            if (data['user_to_kickout'] == socket.username) {
+                changeRoom("lobby");
+            }
+        });
+
+        socket.on("check_if_banned", function(data) {
+            alert("Checking if banned!");
+            if (data['user_to_ban'] == socket.username) {
+                changeRoom("lobby");
+            }
+        });
+
+        socket.on("cannot_join", function(data) {
+            alert("You cannot join this room, you are banned!");
+        });
+
+        function changeRoom(room) {
+            $("#chatlog").empty();
+            socket.room = room;
+            if (socket.admin == socket.room) {
+                $("#banUserInput").show();
+            } else {
+                $("#banUserInput").hide();
+            }
+            socket.emit("change_room", {
+                room: socket.room,
+                status: socket.status
+            });
+        }
+
+        // code snippet from https://stackoverflow.com/questions/24153053/listing-all-the-clients-connected-to-a-room-in-socket-io-version-1
+        function getRoomUsers(room) {
+            socket.emit("room_users", {
+                room: room
+            });
+        }
+
+        socket.on("check_if_messaged", function(data) {
+            if (data['user_to_message'] == socket.username) {
+                alert("You have a personal message from " + data['messenger'] + ": " + data['message']);
+            }
+        });
+
+        function sendMessage() {
+            var msg = document.getElementById("message_input").value;
+            var user = socket.username;
+            //after first message, if a message is not sent within 30 seconds,
+            //the user is deemed inactive and moved back to the lobby
+            var timeoutLength = 5;
+            clearTimeout(socket.myTimeout);
+            socket.myTimeout = setTimeout(function() {
+                socket.emit("message_to_server", {
+                    message: "This user has been inactive for " + timeoutLength + " seconds and is being moved to the lobby",
+                    username: user
+                });
+                setTimeout(function() {
+                    socket.status = "away";
+                    if (socket.room != "lobby") {
+                        changeRoom('lobby');
+                    }
+                }, 3000);
+            }, timeoutLength * 1000);
+            socket.emit("message_to_server", {
+                message: msg,
+                username: user
+            });
+            $("#message_input").val("");
+        }
+
+        function individualMessage() {
+            var msg = document.getElementById("message_input").value;
+            var messenger = socket.username;
+            var user_to_message = document.getElementById("user").value;
+            socket.emit("individual_message", {
+                message: msg,
+                messenger: messenger,
+                user_to_message: user_to_message
+            });
+            $("#message_input").val("");
+            $("#user").val("");
+        }
+
+        function changeStatus() {
+            // FIXME
+            var new_status = document.getElementById("status_input").value;
+            socket.status = new_status;
+            socket.emit("server_update_status", {
+                new_status: new_status,
+                room: socket.room
+            });
+            $("#status_input").val("");
+
+        }
+
+        function updateRoomList(rooms) {
+            var room_list = rooms['rooms'];
+            var current_room = socket.room;
+            if (socket.username != null) {
+                $("#chat_rooms").empty();
+                $("#chat_rooms").append("<div><strong>Currently Open Chatrooms:</strong><div/>");
+                $.each(room_list, function(key, value) {
+                    if (value != current_room) {
+                        $("#chat_rooms").append('<div><a href="#" onclick="changeRoom(\'' + value + '\')">Switch to: ' + value + '</a></div>');
+                    } else {
+                        $("#chat_rooms").append("<div id='current_room_div'><i>Current Room: " + value + "</i><br>");
+                        getRoomUsers(value);
+                        $("#chat_rooms").append("</div>");
+                    }
+                });
+            }
+        }
+
+        socket.on("new_user", function(chatObject) {
+            document.getElementById("chatlog").appendChild(document.createElement("hr"));
+            document.getElementById("chatlog").appendChild(document.createTextNode(chatObject['username'] + ": "));
+            $.getJSON("http://ip-api.com/json/?callback=?", function(data) {
+                document.getElementById("chatlog").appendChild(document.createTextNode("Hello from " + data['city'] + ". " + chatObject['message']));
+            });
+
+        });
+
+
+        socket.on("emit_clients", function(data) {
+            $("#current_room_div").append("<div style='padding-left:2em' id='current_users_in_room'>")
+            for (var key in data) {
+                // if (data.hasOwnProperty(key)) {
+                console.log(key);
+                $("#current_users_in_room").append("User: " + key + "[" + data[key] + "]<br>");
+                // }
+            }
+            // $.each(data, function(key, value) {
+            //     // console.log("key = " + key + " value = " + value);
+            //     console.log("key " + key + "value " + value);
+            //     $("#current_users_in_room").append("User: " + key + "[" + value + "]<br>");
+            // });
+            $("#current_room_div").append("</div>")
+        });
+
+        socket.on("password_verify", function(data) {
+            var pass = prompt("What is the password of " + data["room"] + "?", "The Password");
+            if (pass == data["password"]) {
+                socket.emit("password_true", {
+                    room: data["room"]
+                });
+            } else {
+                alert("Wrong password");
+            }
+        });
+
+        socket.on("forced_leave", function(data) {
+            changeRoom("lobby");
+        });
+
+        $(document).ready(function() {
+            $("#makeRoomInput").hide();
+            $("#banUserInput").hide();
+            $("#messageInput").hide();
+            // FIXME
+            //hiding file upload because it isn't working right now
+            $("#userPic").hide();
+            $("#userPicLabel").hide();
+        });
+    </script>
+</head>
+
+<body>
+    <div id="chatlog"></div>
+    <div id="setUsernameInput">
+        <input type="text" id="username" placeholder="Username" />
+        <br>
+        <label for="userPic" id="userPicLabel">Upload Profile Picture: </label>
+        <input type="file" name="userPic" id="userPic" accept="image/*">
+        <br><button onclick="addUser()">Login</button>
+    </div>
+    <div id="messageInput">
+        <input type="text" id="message_input" placeholder="Input Message Text" />
+        <button onclick="sendMessage()">Chatroom Message</button>
+        <br>
+        <input type="text" id="user" placeholder="User" />
+        <button onclick="individualMessage()">Individual Message</button><br>
+        <input type="text" id="status_input" maxlength="10" placeholder="Status...">
+        <button type="button" onclick="changeStatus()">Update Status</button>
+    </div>
+    <br>
+    <div id="makeRoomInput">
+        <input type="text" id="room" placeholder="Room" />
+        <label for="public">Public</label><input type="radio" id="public" name="pub_private" value="public" checked />
+        <label for="private">Private</label><input type="radio" name="pub_private" id="private" value="private" />
+        <button onclick="makeRoom()">Make Chat Room</button>
+    </div>
+    <div id="banUserInput">
+        <button onclick="kickoutUser()" id="kickout_user_button">Kick out User</button>
+        <button onclick="banUser()" id="ban_user_button">Ban User</button>
+    </div>
+    <div id="wrapper_current_users">
+        <div id="current_users">
+        </div>
+    </div>
+    <div id="chat_rooms" style="float:right;width:300px;height:250px;overflow:scroll-y;padding:10px;"></div>
+
+</body>
+
+</html>
